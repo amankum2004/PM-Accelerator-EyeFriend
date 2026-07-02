@@ -4,10 +4,11 @@ interface StatusBannerProps {
   message: string;
   isLoading: boolean;
   isError: boolean;
+  isContinuous?: boolean;
 }
 
-export function StatusBanner({ message, isLoading, isError }: StatusBannerProps) {
-  if (!message && !isLoading) return null;
+export function StatusBanner({ message, isLoading, isError, isContinuous }: StatusBannerProps) {
+  if (!message && !isLoading && !isContinuous) return null;
 
   return (
     <div
@@ -30,7 +31,7 @@ export function StatusBanner({ message, isLoading, isError }: StatusBannerProps)
         boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
       }}
     >
-      {isLoading ? "Processing... please wait." : message}
+      {isLoading ? "Processing... please wait." : isContinuous && !message ? "🔴 Live — listening to your surroundings..." : message}
     </div>
   );
 }

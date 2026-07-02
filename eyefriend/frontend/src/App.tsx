@@ -24,13 +24,13 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isError, setIsError] = useState(false);
 
-  const onLiveResult = useCallback((text: string) => {
+  const handleResult = useCallback((text: string) => {
     setResult(text);
     setIsError(false);
   }, []);
 
   const { isRunning: isContinuous, start: startContinuous, stop: stopContinuous } =
-    useContinuousMode(captureFrame, speak, onLiveResult);
+    useContinuousMode(captureFrame, speak, handleResult);
 
   const handleCapture = useCallback(async () => {
     if (!isActive) {
@@ -42,16 +42,19 @@ export default function App() {
       speak("Could not capture image. Please try again.");
       return;
     }
+
     setIsLoading(true);
     setIsError(false);
     setResult("");
     stopSpeech();
+
     try {
       let response = "";
       if (mode === "scene") response = await describeScene(blob);
       else if (mode === "ocr") response = await readText(blob);
       else if (mode === "currency") response = await identifyCurrency(blob);
       else if (mode === "shopping") response = await identifyProduct(blob);
+
       setResult(response);
       speak(response);
     } catch (err: unknown) {
@@ -87,13 +90,19 @@ export default function App() {
   );
 
   const handleModeChange = (newMode: Mode) => {
-    if (isContinuous) stopContinuous();
+    stopContinuous();
     setMode(newMode);
     setResult("");
     setIsError(false);
+    speak(`Mode changed to ${newMode.replace("ocr", "text reading").replace("scene", "scene description")}`);
   };
 
-  const handleToggleContinuous = () => {
+  const handleStopCamera = () => {
+    stopContinuous();
+    stopCamera();
+  };
+
+  const toggleContinuous = () => {
     if (isContinuous) {
       stopContinuous();
       stopSpeech();
@@ -102,14 +111,8 @@ export default function App() {
         speak("Please start the camera first.");
         return;
       }
-      setResult("");
       startContinuous();
     }
-  };
-
-  const handleStopCamera = () => {
-    stopContinuous();
-    stopCamera();
   };
 
   return (
@@ -126,6 +129,7 @@ export default function App() {
         gap: 24,
       }}
     >
+      {/* Header */}
       <header style={{ textAlign: "center" }}>
         <h1 style={{ fontSize: 36, fontWeight: 800, color: "#5ba3d0", margin: 0 }}>
           👁 EyeFriend
@@ -135,15 +139,17 @@ export default function App() {
         </p>
       </header>
 
+      {/* Camera error */}
       {cameraError && (
         <div role="alert" style={{ color: "#e74c3c", fontSize: 16, textAlign: "center" }}>
           {cameraError}
         </div>
       )}
 
+      {/* Camera feed */}
       <CameraFeed videoRef={videoRef} isActive={isActive} isContinuous={isContinuous} />
 
-      {/* Camera + live controls */}
+      {/* Camera controls */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
         <ActionButton
           label={isActive ? "Stop Camera" : "Start Camera"}
@@ -152,11 +158,11 @@ export default function App() {
           ariaLabel={isActive ? "Stop camera" : "Start camera"}
         />
         <ActionButton
-          label={isContinuous ? "⏹ Stop Live" : "🔴 Live Describe"}
-          onClick={handleToggleContinuous}
+          label={isContinuous ? "⏹ Stop Live" : "▶ Live Describe"}
+          onClick={toggleContinuous}
           variant={isContinuous ? "danger" : "primary"}
           disabled={!isActive}
-          ariaLabel={isContinuous ? "Stop continuous description" : "Start live continuous description"}
+          ariaLabel={isContinuous ? "Stop continuous description" : "Start continuous scene description"}
         />
         <ActionButton
           label="Stop Speaking"
@@ -166,8 +172,10 @@ export default function App() {
         />
       </div>
 
+      {/* Mode selector */}
       <ModeSelector current={mode} onChange={handleModeChange} />
 
+      {/* Capture button or Compare panel */}
       {mode === "compare" ? (
         <ComparePanel
           onCompare={handleCompare}
@@ -184,8 +192,10 @@ export default function App() {
         />
       )}
 
+      {/* Result */}
       <StatusBanner message={result} isLoading={isLoading} isError={isError} isContinuous={isContinuous} />
 
+      {/* Footer */}
       <footer style={{ color: "#555", fontSize: 13, marginTop: "auto", textAlign: "center" }}>
         EyeFriend MVP — No images are stored. All processing is real-time.
       </footer>

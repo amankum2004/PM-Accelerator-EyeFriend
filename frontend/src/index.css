@@ -24,3 +24,8 @@ input:focus-visible {
   outline: 3px solid #5ba3d0;
   outline-offset: 2px;
 }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
