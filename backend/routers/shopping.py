@@ -1,8 +1,32 @@
+import os
+import base64
+import httpx
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from typing import Optional
-from services.vision_ai import call_gemini
+from dotenv import load_dotenv
+
+load_dotenv()
 
 router = APIRouter()
+
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+
+async def _groq_request(payload: dict) -> str:
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is not set in your .env file")
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.post(
+            GROQ_URL,
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        if response.status_code == 429:
+            raise ValueError("Rate limit reached. Please wait a moment.")
+        if response.status_code != 200:
+            raise ValueError(f"Groq API error {response.status_code}: {response.text[:300]}")
+    return response.json()["choices"][0]["message"]["content"].strip()
 
 
 @router.post("/identify")
@@ -14,7 +38,16 @@ async def identify_product(file: UploadFile = File(...)):
     )
     try:
         image_bytes = await file.read()
-        result = await call_gemini(image_bytes, prompt)
+        encoded = base64.b64encode(image_bytes).decode()
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}},
+            ]}],
+            "max_tokens": 300,
+        }
+        result = await _groq_request(payload)
         return {"result": result}
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -31,48 +64,25 @@ async def compare_products(
     prompt = (
         f"You are an assistive AI for visually impaired shoppers. "
         f"Compare these two products based on: {criteria}. "
-        f"The first image is Product A (left/first) and the second is Product B (right/second). "
-        f"Give a clear, concise comparison and state which is better for the given criteria. "
-        f"Keep the response under 4 sentences."
+        f"Product A is the first image, Product B is the second. "
+        f"Give a concise comparison and state which is better. Keep it under 4 sentences."
     )
     try:
         bytes1 = await file1.read()
         bytes2 = await file2.read()
-
-        import base64
-        import httpx
-        import os
-
-        GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-        GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-
+        enc1 = base64.b64encode(bytes1).decode()
+        enc2 = base64.b64encode(bytes2).decode()
         payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt},
-                        {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(bytes1).decode()}},
-                        {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(bytes2).decode()}},
-                    ]
-                }
-            ]
+            "model": GROQ_MODEL,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{enc1}"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{enc2}"}},
+            ]}],
+            "max_tokens": 400,
         }
-
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(
-                f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
-
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return {"result": "Could not compare products. Please try again."}
-
-        result = candidates[0]["content"]["parts"][0]["text"].strip()
+        result = await _groq_request(payload)
         return {"result": result}
-
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:

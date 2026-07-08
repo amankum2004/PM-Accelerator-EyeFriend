@@ -2,7 +2,7 @@ import { useRef, useState, useCallback } from "react";
 import { describeScene } from "../api/eyefriend";
 
 // Wait this long after a response finishes before sending the next frame
-const DELAY_AFTER_RESPONSE_MS = 4000;
+const DELAY_AFTER_RESPONSE_MS = 15000; // 15 seconds — stays well within free tier limits
 
 export function useContinuousMode(
   captureFrame: () => Promise<Blob | null>,
@@ -31,8 +31,8 @@ export function useContinuousMode(
           await sleep(DELAY_AFTER_RESPONSE_MS);
         }
       } catch {
-        // skip failed frames silently, wait a bit before retrying
-        await sleep(2000);
+        // back off for 20 seconds on any error (e.g. rate limit) before retrying
+        await sleep(20000);
       } finally {
         busyRef.current = false;
       }

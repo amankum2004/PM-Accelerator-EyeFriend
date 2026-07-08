@@ -1,48 +1,62 @@
 import os
 import base64
 import httpx
-from typing import Optional
+from dotenv import load_dotenv
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+load_dotenv()
+
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 def _encode_image(image_bytes: bytes) -> str:
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
-async def call_gemini(image_bytes: bytes, prompt: str) -> str:
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY not set")
+async def call_vision_ai(image_bytes: bytes, prompt: str) -> str:
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is not set in your .env file")
 
     encoded = _encode_image(image_bytes)
 
     payload = {
-        "contents": [
+        "model": GROQ_MODEL,
+        "messages": [
             {
-                "parts": [
-                    {"text": prompt},
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
                     {
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": encoded,
-                        }
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{encoded}"
+                        },
                     },
-                ]
+                ],
             }
-        ]
+        ],
+        "max_tokens": 300,
     }
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.post(
-            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+            GROQ_URL,
             json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
         )
-        response.raise_for_status()
+        if response.status_code == 429:
+            raise ValueError("Rate limit reached. Please wait a moment before trying again.")
+        if response.status_code != 200:
+            raise ValueError(f"Groq API error {response.status_code}: {response.text[:300]}")
         data = response.json()
 
-    candidates = data.get("candidates", [])
-    if not candidates:
-        return "I could not process the image. Please try again."
+    return data["choices"][0]["message"]["content"].strip()
 
-    return candidates[0]["content"]["parts"][0]["text"].strip()
+
+# Keep old name as alias so all routers work without changes
+call_gemini = call_vision_ai
